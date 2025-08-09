@@ -15,7 +15,16 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 
 	// Walk directory to find .cs files
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && strings.HasSuffix(info.Name(), ".cs") {
+		if err != nil {
+			return nil
+		}
+
+		// Skip obj directory
+		if info.IsDir() && info.Name() == "obj" {
+			return filepath.SkipDir
+		}
+
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".cs") {
 			// Exclude merged files, test files, and auto-generated files
 			if strings.HasSuffix(info.Name(), "merged.cs") ||
 				strings.Contains(strings.ToLower(info.Name()), "test") ||
@@ -44,8 +53,11 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 	// Regular expressions for parsing C# code
 	usingRe := regexp.MustCompile(`^\s*using\s+([^;]+);`)
 	globalUsingRe := regexp.MustCompile(`^\s*global\s+using\s+([^;]+);`)
-	namespaceRe := regexp.MustCompile(`^\s*namespace\s+([^\s{]+)`)
+	namespaceRe := regexp.MustCompile(`^\s*namespace\s+([^\s{;]+)`)
+	fileScopedNamespaceRe := regexp.MustCompile(`^\s*namespace\s+([^\s{;]+)\s*;\s*$`)
 	mainMethodRe := regexp.MustCompile(`\bstatic\s+void\s+Main\s*\(`)
+
+	var isFileScopedNamespace bool
 
 	// Process GlobalUsings.cs first if it exists
 	if globalUsingsFile != "" {
@@ -67,7 +79,7 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 		}
 	}
 
-	// First pass: find the main namespace
+	// First pass: find the main namespace and detect if using file-scoped namespaces
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
@@ -75,10 +87,28 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 		}
 
 		content := string(data)
+		lines := strings.Split(content, "\n")
+
+		// Check for file-scoped namespace first
+		for _, line := range lines {
+			if fileScopedNamespaceRe.MatchString(line) {
+				isFileScopedNamespace = true
+				if mainMethodRe.MatchString(content) {
+					mainNamespace = fileScopedNamespaceRe.FindStringSubmatch(line)[1]
+					break
+				}
+			}
+		}
+
+		// If found Main method and namespace, we're done
+		if mainNamespace != "" && mainMethodRe.MatchString(content) {
+			break
+		}
+
+		// Otherwise, check for traditional namespace
 		if mainMethodRe.MatchString(content) {
-			lines := strings.Split(content, "\n")
 			for _, line := range lines {
-				if namespaceRe.MatchString(line) {
+				if namespaceRe.MatchString(line) && !fileScopedNamespaceRe.MatchString(line) {
 					mainNamespace = namespaceRe.FindStringSubmatch(line)[1]
 					break
 				}
@@ -96,7 +126,11 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 			}
 			lines := strings.Split(string(data), "\n")
 			for _, line := range lines {
-				if namespaceRe.MatchString(line) {
+				if fileScopedNamespaceRe.MatchString(line) {
+					isFileScopedNamespace = true
+					mainNamespace = fileScopedNamespaceRe.FindStringSubmatch(line)[1]
+					break
+				} else if namespaceRe.MatchString(line) {
 					mainNamespace = namespaceRe.FindStringSubmatch(line)[1]
 					break
 				}
@@ -131,8 +165,13 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 				continue
 			}
 
-			// Handle namespace declarations
-			if namespaceRe.MatchString(line) {
+			// Handle file-scoped namespace declarations (skip them entirely)
+			if fileScopedNamespaceRe.MatchString(line) {
+				continue
+			}
+
+			// Handle traditional namespace declarations
+			if namespaceRe.MatchString(line) && !fileScopedNamespaceRe.MatchString(line) {
 				insideNamespace = true
 				// Capture the indentation for proper formatting
 				namespaceIndent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
@@ -188,19 +227,27 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 
 	// Add namespace declaration if we found one
 	if mainNamespace != "" {
-		final = append(final, fmt.Sprintf("namespace %s", mainNamespace))
-		final = append(final, "{")
+		if isFileScopedNamespace {
+			// Use file-scoped namespace (C# 10+)
+			final = append(final, fmt.Sprintf("namespace %s;", mainNamespace))
+			final = append(final, "")
+			final = append(final, result...)
+		} else {
+			// Use traditional namespace with braces
+			final = append(final, fmt.Sprintf("namespace %s", mainNamespace))
+			final = append(final, "{")
 
-		// Indent all content
-		for _, line := range result {
-			if line == "" {
-				final = append(final, "")
-			} else {
-				final = append(final, "    "+line)
+			// Indent all content
+			for _, line := range result {
+				if line == "" {
+					final = append(final, "")
+				} else {
+					final = append(final, "    "+line)
+				}
 			}
-		}
 
-		final = append(final, "}")
+			final = append(final, "}")
+		}
 	} else {
 		final = append(final, result...)
 	}
