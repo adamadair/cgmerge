@@ -37,7 +37,7 @@ func MergeGoProjectFiles(dir string) (string, error) {
 			_, _ = fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", file, err)
 			return "", err
 		}
-		lines := strings.Split(string(data), "\n")
+		lines := strings.Split(string(stripBOM(data)), "\n")
 		outLines := []string{}
 
 		for i := 0; i < len(lines); i++ {

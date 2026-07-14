@@ -65,7 +65,7 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("error reading %s: %v", globalUsingsFile, err)
 		}
-		lines := strings.Split(string(data), "\n")
+		lines := strings.Split(string(stripBOM(data)), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if globalUsingRe.MatchString(line) {
@@ -86,7 +86,7 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 			return "", fmt.Errorf("error reading %s: %v", file, err)
 		}
 
-		content := string(data)
+		content := string(stripBOM(data))
 		lines := strings.Split(content, "\n")
 
 		// Check for file-scoped namespace first
@@ -124,7 +124,7 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 			if err != nil {
 				continue
 			}
-			lines := strings.Split(string(data), "\n")
+			lines := strings.Split(string(stripBOM(data)), "\n")
 			for _, line := range lines {
 				if fileScopedNamespaceRe.MatchString(line) {
 					isFileScopedNamespace = true
@@ -148,7 +148,7 @@ func MergeCSharpProjectFiles(dir string) (string, error) {
 			return "", fmt.Errorf("error reading %s: %v", file, err)
 		}
 
-		lines := strings.Split(string(data), "\n")
+		lines := strings.Split(string(stripBOM(data)), "\n")
 		outLines := []string{}
 		insideNamespace := false
 		namespaceIndent := ""
