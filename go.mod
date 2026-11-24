@@ -1,5 +1,5 @@
-module cgmerge
+module github.com/adamadair/cgmerge
 
 go 1.24
 
-require github.com/atotto/clipboard v0.1.4 // indirect
+require github.com/atotto/clipboard v0.1.4
